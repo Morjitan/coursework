@@ -24,7 +24,12 @@ from bot.handlers.settings import (
     convert_user_currency_to_usd
 )
 from database.repositories import UserRepository
+from services.crypto_rates_service import crypto_rates_service
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = config.bot_token.get_secret_value()
@@ -259,7 +264,15 @@ async def setup_bot():
     @dp.callback_query(lambda c: c.data == "main_menu")
     async def cb_main_menu(callback: CallbackQuery, state: FSMContext):
         markup = await create_main_menu(callback.from_user.id)
-        await callback.message.edit_text("👋 Выберите действие:", reply_markup=markup)
+        
+        # Проверяем, есть ли в сообщении текст для редактирования
+        if callback.message.text:
+            # Если сообщение содержит текст, редактируем его
+            await callback.message.edit_text("👋 Выберите действие:", reply_markup=markup)
+        else:
+            # Если сообщение содержит изображение или медиа, отправляем новое сообщение
+            await callback.message.answer("👋 Выберите действие:", reply_markup=markup)
+        
         await state.clear()
         await callback.answer()
 
@@ -430,20 +443,21 @@ async def setup_bot():
         asset_info = data.get("asset_info")
         amount_currency = data.get("amount_currency")
         
-        CRYPTO_RATES = {
-            'ETH': 2600.0,
-            'BTC': 42000.0,
-            'USDT': 1.0,
-            'USDC': 1.0,
-            'BNB': 300.0,
-            'MATIC': 0.8,
-            'TRX': 0.1,
-        }
-        
         if amount_currency == asset_info['symbol']:
-            crypto_rate = CRYPTO_RATES.get(amount_currency, 1.0)
-            payment_amount_usd = amount * crypto_rate
+            try:
+                crypto_rate = await crypto_rates_service.get_single_rate(amount_currency)
+                if crypto_rate is None:
+                    fallback_rates = {
+                        'ETH': 2600.0, 'BTC': 42000.0, 'USDT': 1.0, 'USDC': 1.0,
+                        'BNB': 300.0, 'MATIC': 0.8, 'TRX': 0.1,
+                    }
+                    crypto_rate = fallback_rates.get(amount_currency, 1.0)
+                    logger.warning(f"Используется fallback курс для {amount_currency}: ${crypto_rate:.2f}")
+            except Exception as e:
+                logger.error(f"Ошибка получения курса {amount_currency}: {e}")
+                crypto_rate = {'ETH': 2600.0, 'BTC': 42000.0, 'USDT': 1.0, 'USDC': 1.0, 'BNB': 300.0, 'MATIC': 0.8, 'TRX': 0.1}.get(amount_currency, 1.0)
             
+            payment_amount_usd = amount * crypto_rate
             display_amount = f"{amount:.4f} {amount_currency} (≈${payment_amount_usd:.2f} USD)"
             
         else:
@@ -489,17 +503,19 @@ async def setup_bot():
         if amount_currency == asset_info['symbol']:
             payment_amount = original_amount
         else:
-            CRYPTO_RATES = {
-                'ETH': 2600.0,
-                'BTC': 42000.0,
-                'USDT': 1.0,
-                'USDC': 1.0,
-                'BNB': 300.0,
-                'MATIC': 0.8,
-                'TRX': 0.1,
-            }
+            try:
+                crypto_rate = await crypto_rates_service.get_single_rate(asset_info['symbol'])
+                if crypto_rate is None:
+                    fallback_rates = {
+                        'ETH': 2600.0, 'BTC': 42000.0, 'USDT': 1.0, 'USDC': 1.0,
+                        'BNB': 300.0, 'MATIC': 0.8, 'TRX': 0.1,
+                    }
+                    crypto_rate = fallback_rates.get(asset_info['symbol'], 1.0)
+                    logger.warning(f"Используется fallback курс для {asset_info['symbol']}: ${crypto_rate:.2f}")
+            except Exception as e:
+                logger.error(f"Ошибка получения курса {asset_info['symbol']}: {e}")
+                crypto_rate = {'ETH': 2600.0, 'BTC': 42000.0, 'USDT': 1.0, 'USDC': 1.0, 'BNB': 300.0, 'MATIC': 0.8, 'TRX': 0.1}.get(asset_info['symbol'], 1.0)
             
-            crypto_rate = CRYPTO_RATES.get(asset_info['symbol'], 1.0)
             payment_amount = amount / crypto_rate
         
         try:
@@ -583,13 +599,13 @@ async def setup_bot():
         text = f"📊 <b>Статистика полученных донатов</b>\n\n"
         text += f"💰 <b>За всё время:</b>\n"
         text += f"   • Донатов: {stats['total']['count']}\n"
-        text += f"   • Сумма: {stats['total']['amount']:.4f} (крипто)\n\n"
+        text += f"   • Сумма: {stats['total']['amount']:.2f} (крипто)\n\n"
         text += f"📅 <b>За последний месяц:</b>\n"
         text += f"   • Донатов: {stats['month']['count']}\n"
-        text += f"   • Сумма: {stats['month']['amount']:.4f} (крипто)\n\n"
+        text += f"   • Сумма: {stats['month']['amount']:.2f} (крипто)\n\n"
         text += f"⏰ <b>За последнюю неделю:</b>\n"
         text += f"   • Донатов: {stats['week']['count']}\n"
-        text += f"   • Сумма: {stats['week']['amount']:.4f} (крипто)\n\n"
+        text += f"   • Сумма: {stats['week']['amount']:.2f} (крипто)\n\n"
         text += f"<i>💡 Суммы указаны в криптовалютах без конвертации</i>"
         
         await callback.message.edit_text(

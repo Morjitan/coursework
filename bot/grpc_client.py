@@ -77,8 +77,10 @@ class DonationClient:
             
         except grpc.RpcError as e:
             logger.error(f"gRPC ошибка при создании платежа: {e.code()} - {e.details()}")
+            # Fallback - генерируем базовую ethereum ссылку
+            fallback_amount_wei = int(amount * (10 ** 18))  # Предполагаем 18 decimals для fallback
             return {
-                'payment_url': f"http://localhost:8000/pay/fallback_{donation_id}",
+                'payment_url': f"ethereum:{streamer_wallet}@1?value={fallback_amount_wei}&gas=21000",
                 'qr_code_url': "",
                 'nonce': f"fallback_{donation_id}",
                 'expires_at': 0,
@@ -86,8 +88,10 @@ class DonationClient:
             }
         except Exception as e:
             logger.error(f"Неожиданная ошибка при создании платежа: {str(e)}")
+            # Fallback - генерируем базовую ethereum ссылку
+            fallback_amount_wei = int(amount * (10 ** 18))  # Предполагаем 18 decimals для fallback
             return {
-                'payment_url': f"http://localhost:8000/pay/error_{donation_id}",
+                'payment_url': f"ethereum:{streamer_wallet}@1?value={fallback_amount_wei}&gas=21000",
                 'qr_code_url': "",
                 'nonce': f"error_{donation_id}",
                 'expires_at': 0,
@@ -148,12 +152,12 @@ class DonationClient:
                 'error_message': f"Ошибка: {str(e)}"
             }
     
-    def get_payment_qr_code(self, payment_url: str) -> Optional[bytes]:
+    def get_payment_qr_code(self, payment_url: str):
         """
         Gets QR code for payment
         
         Returns:
-            bytes: PNG image of QR code or None on error
+            GetQRCodeResponse object or None on error
         """
         try:
             stub = self._get_stub()
@@ -163,7 +167,7 @@ class DonationClient:
             )
             
             response = stub.GetPaymentQRCode(request)
-            return response.qr_code_image
+            return response
             
         except grpc.RpcError as e:
             logger.error(f"gRPC ошибка при получении QR кода: {e.code()} - {e.details()}")

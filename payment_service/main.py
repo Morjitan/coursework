@@ -25,27 +25,22 @@ import donation_pb2_grpc
 
 from database import get_database
 
-# Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# В памяти храним данные о платежах: nonce -> запись
 payments: Dict[str, dict] = {}
 
-# Для предотвращения коллизий nonce
 used_nonces: set = set()
 nonce_counter = 0
 nonce_lock = threading.Lock()
 
-# Конфигурация
 PAYMENT_TIMEOUT_MINUTES = 15
 MONITORING_INTERVAL_SECONDS = 30
 OVERLAY_SERVICE_URL = "http://overlay:8001"
 
-# FastAPI приложение для HTTP API
 app = FastAPI(title="Payment Service API")
 
 @app.get("/")
@@ -67,14 +62,12 @@ async def get_qr_code(nonce: str):
         raise HTTPException(status_code=404, detail="Платеж не найден")
     
     try:
-        # Генерируем QR код
         qr = qrcode.QRCode(version=1, box_size=10, border=5)
         qr.add_data(payment_data["payment_url"])
         qr.make(fit=True)
         
         qr_image = qr.make_image(fill_color="black", back_color="white")
         
-        # Конвертируем в bytes
         img_buffer = io.BytesIO()
         qr_image.save(img_buffer, format='PNG')
         qr_code_bytes = img_buffer.getvalue()
@@ -92,7 +85,6 @@ async def get_payment_page(nonce: str):
     if not payment_data:
         raise HTTPException(status_code=404, detail="Платеж не найден")
     
-    # Проверяем не истек ли платеж
     if time.time() > payment_data.get('expires_at', 0):
         status_text = "❌ Время оплаты истекло"
         status_color = "#ff4444"
@@ -108,13 +100,11 @@ async def get_payment_page(nonce: str):
     
     expires_time = datetime.fromtimestamp(payment_data.get('expires_at', 0)).strftime('%H:%M:%S')
     
-    # Получаем информацию об активе
     asset_info = payment_data.get('asset_info', {})
     decimals = asset_info.get('decimals', 6)
     asset_name = asset_info.get('name', payment_data['asset_symbol'])
     contract_address = asset_info.get('contract_address', 'Нативный токен')
     
-    # Форматируем сумму с учетом decimals
     amount_display = f"{payment_data['amount']:.{min(decimals, 8)}f}"
     
     html_content = f"""
@@ -447,108 +437,135 @@ class DonationService(donation_pb2_grpc.DonationServiceServicer):
             print(f"⚠️ Ошибка подключения к базе данных: {e}")
             self.db = None
     
-    async def get_asset_info(self, asset_symbol: str, network: str) -> Optional[dict]:
-        """Получает информацию об активе из базы данных"""
-        if not self.db:
-            print("⚠️ База данных недоступна, используем значения по умолчанию")
-            default_decimals = {
-                'ETH': 18, 'BTC': 8, 'USDT': 6, 'USDC': 6, 
-                'BNB': 18, 'MATIC': 18, 'TRX': 6
-            }
-            return {
-                'decimals': default_decimals.get(asset_symbol, 6),
-                'symbol': asset_symbol,
-                'network': network
-            }
+    def get_asset_info(self, asset_symbol: str, network: str) -> Optional[dict]:
+        """Получает информацию об активе - упрощенная версия с базовыми активами"""
         
-        try:
-            assets = await self.db.get_all_assets()
-            for asset in assets:
-                if (asset['symbol'].upper() == asset_symbol.upper() and 
-                    asset['network'].lower() == network.lower()):
-                    return {
-                        'decimals': asset['decimals'],
-                        'symbol': asset['symbol'],
-                        'network': asset['network'],
-                        'contract_address': asset.get('contract_address'),
-                        'name': asset.get('name', asset_symbol)
-                    }
+        assets_config = {
+            ('ETH', 'ethereum'): {
+                'decimals': 18,
+                'symbol': 'ETH',
+                'network': 'ethereum',
+                'contract_address': None,  # Native token
+                'name': 'Ethereum'
+            },
+            ('USDT', 'ethereum'): {
+                'decimals': 6,
+                'symbol': 'USDT',
+                'network': 'ethereum',
+                'contract_address': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+                'name': 'Tether USD'
+            },
+            ('USDC', 'ethereum'): {
+                'decimals': 6,
+                'symbol': 'USDC',
+                'network': 'ethereum',
+                'contract_address': '0xA0b86a33E6417c1Bec9FB6C7b0D88c11b426Bb67',
+                'name': 'USD Coin'
+            },
             
-            print(f"⚠️ Актив {asset_symbol} на сети {network} не найден в базе данных")
-            # Возвращаем дефолтные значения
-            default_decimals = {
-                'ETH': 18, 'BTC': 8, 'USDT': 6, 'USDC': 6, 
-                'BNB': 18, 'MATIC': 18, 'TRX': 6
+            # BSC сеть
+            ('BNB', 'bsc'): {
+                'decimals': 18,
+                'symbol': 'BNB',
+                'network': 'bsc',
+                'contract_address': None,  # Native token
+                'name': 'BNB'
+            },
+            ('USDT', 'bsc'): {
+                'decimals': 18,
+                'symbol': 'USDT',
+                'network': 'bsc',
+                'contract_address': '0x55d398326f99059fF775485246999027B3197955',
+                'name': 'Tether USD'
+            },
+            ('USDC', 'bsc'): {
+                'decimals': 18,
+                'symbol': 'USDC',
+                'network': 'bsc',
+                'contract_address': '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+                'name': 'USD Coin'
+            },
+            
+            # Polygon сеть
+            ('MATIC', 'polygon'): {
+                'decimals': 18,
+                'symbol': 'MATIC',
+                'network': 'polygon',
+                'contract_address': None,  # Native token
+                'name': 'Polygon'
+            },
+            ('USDT', 'polygon'): {
+                'decimals': 6,
+                'symbol': 'USDT',
+                'network': 'polygon',
+                'contract_address': '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+                'name': 'Tether USD'
+            },
+            ('USDC', 'polygon'): {
+                'decimals': 6,
+                'symbol': 'USDC',
+                'network': 'polygon',
+                'contract_address': '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+                'name': 'USD Coin'
             }
-            return {
-                'decimals': default_decimals.get(asset_symbol, 6),
-                'symbol': asset_symbol,
-                'network': network
-            }
-        except Exception as e:
-            print(f"❌ Ошибка получения информации об активе: {e}")
-            return None
+        }
+        
+        # Ищем актив по символу и сети
+        key = (asset_symbol.upper(), network.lower())
+        
+        if key in assets_config:
+            asset_info = assets_config[key]
+            print(f"✅ Найден актив: {asset_info['symbol']} на {asset_info['network']}")
+            print(f"   📊 Decimals: {asset_info['decimals']}, Contract: {asset_info.get('contract_address', 'Native')}")
+            return asset_info
+        
+        print(f"❌ Актив {asset_symbol} на сети {network} не поддерживается")
+        print(f"🔍 Поддерживаемые активы:")
+        for (symbol, net), info in assets_config.items():
+            print(f"   • {symbol} на {net}")
+        
+        return None
     
     def generate_unique_nonce(self, amount: float, asset_info: dict) -> tuple[str, float]:
-        """Генерирует уникальный nonce без коллизий"""
+        """Генерирует уникальный nonce в пределах 1e6 и обновляет amount"""
         global nonce_counter
         
         with nonce_lock:
             nonce_counter += 1
             
-            timestamp_ns = int(time.time() * 1_000_000)
-            process_id = os.getpid()
-            thread_id = threading.get_ident()
-            random_part = random.randint(100000, 999999)
+            timestamp_micro = int((time.time() * 1000) % 1000)
+            random_part = random.randint(0, 999)
             
-            # Создаем уникальный nonce
-            nonce_base = f"{timestamp_ns}_{process_id}_{thread_id}_{nonce_counter}_{random_part}"
+            nonce_value = (timestamp_micro * 1000 + nonce_counter % 1000) % 1000000
             
-            # Проверяем на коллизии (хотя вероятность крайне мала)
             attempts = 0
-            while nonce_base in used_nonces and attempts < 100:
-                random_part = random.randint(100000, 999999)
-                nonce_base = f"{timestamp_ns}_{process_id}_{thread_id}_{nonce_counter}_{random_part}"
+            while str(nonce_value) in used_nonces and attempts < 100:
+                nonce_value = (nonce_value + random.randint(1, 999)) % 1000000
                 attempts += 1
             
             if attempts >= 100:
-                # Крайне маловероятная ситуация - используем UUID
-                nonce_base = f"uuid_{uuid.uuid4().hex}"
+                nonce_value = random.randint(0, 999999)
             
-            # Добавляем в использованные
-            used_nonces.add(nonce_base)
+            nonce_str = str(nonce_value)
+            used_nonces.add(nonce_str)
             
-            # Очищаем старые nonce (старше 20 минут для надежности)
+            amount_int_part = int(amount * 1000000)
+            final_amount = (amount_int_part + nonce_value) / 1000000
+            
             self._cleanup_old_nonces()
             
-            # Для уникальной суммы добавляем микро-количество в зависимости от decimals
-            decimals = asset_info.get('decimals', 6)
-            
-            # Добавляем случайную сумму в последние разряды
-            # Чем больше decimals, тем меньше добавка относительно основной суммы
-            if decimals >= 6:
-                # Для токенов с большим количеством decimals добавляем очень маленькую сумму
-                random_addition = random.randint(1, 999999) / (10 ** (decimals + 3))
-            else:
-                # Для токенов с малым количеством decimals добавляем еще меньше
-                random_addition = random.randint(1, 99999) / (10 ** (decimals + 5))
-            
-            final_amount = amount + random_addition
-            
-            print(f"💎 Сгенерирован уникальный nonce: {nonce_base[:20]}...")
+            print(f"💎 Сгенерирован nonce: {nonce_value} (6 разрядов)")
             print(f"   Оригинальная сумма: {amount}")
             print(f"   Финальная сумма: {final_amount}")
-            print(f"   Разница: {random_addition:.10f}")
-            print(f"   Decimals актива: {decimals}")
+            print(f"   Добавлено к сумме: {final_amount - amount:.6f}")
             
-            return nonce_base, final_amount
+            return nonce_str, final_amount
     
     def _cleanup_old_nonces(self):
         """Очищает старые nonce для предотвращения бесконечного роста"""
         current_time = time.time()
-        cutoff_time = current_time - (PAYMENT_TIMEOUT_MINUTES + 5) * 60  # +5 минут для надежности
+        cutoff_time = current_time - (PAYMENT_TIMEOUT_MINUTES + 5) * 60 
         
-        # Удаляем старые платежи и их nonce
         expired_nonces = []
         for nonce, payment_data in payments.items():
             if payment_data.get('created_at', 0) < cutoff_time:
@@ -566,26 +583,15 @@ class DonationService(donation_pb2_grpc.DonationServiceServicer):
     def CreatePaymentLink(self, request, context):
         """Создает ссылку для оплаты с уникальным nonce"""
         try:
-            # Получаем информацию об активе асинхронно
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                asset_info = loop.run_until_complete(
-                    self.get_asset_info(request.asset_symbol, request.network)
-                )
-            finally:
-                loop.close()
+            asset_info = self.get_asset_info(request.asset_symbol, request.network)
             
             if not asset_info:
                 context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
                 context.set_details(f"Актив {request.asset_symbol} на сети {request.network} не поддерживается")
                 return donation_pb2.CreatePaymentResponse()
             
-            # Генерируем уникальный nonce и финальную сумму
             nonce, final_amount = self.generate_unique_nonce(request.amount, asset_info)
             
-            # Создаем URL для оплаты (поддержка MetaMask и других кошельков)
             payment_url = self.generate_payment_url(
                 request.streamer_wallet_address,
                 final_amount,
@@ -595,13 +601,10 @@ class DonationService(donation_pb2_grpc.DonationServiceServicer):
                 asset_info
             )
             
-            # Создаем QR код
             qr_code_url = f"http://payment-service:50052/qr/{nonce}"
             
-            # Время истечения (15 минут)
             expires_at = int(time.time()) + (PAYMENT_TIMEOUT_MINUTES * 60)
             
-            # Сохраняем данные о платеже
             payments[nonce] = {
                 "donation_id": request.donation_id,
                 "streamer_wallet": request.streamer_wallet_address,
@@ -637,9 +640,7 @@ class DonationService(donation_pb2_grpc.DonationServiceServicer):
     
     def generate_payment_url(self, wallet_address: str, amount: float, asset_symbol: str, 
                            network: str, nonce: str, asset_info: dict) -> str:
-        """Генерирует URL для оплаты, совместимый с MetaMask"""
         
-        # Конфигурация контрактов токенов для разных сетей
         token_contracts = {
             'ethereum': {
                 'USDT': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
@@ -655,44 +656,49 @@ class DonationService(donation_pb2_grpc.DonationServiceServicer):
             }
         }
         
-        # Получаем decimals из asset_info
         decimals = asset_info.get('decimals', 6)
         contract_address = asset_info.get('contract_address')
+        chain_id = self.get_chain_id(network)
+        
+        value = int(amount * (10 ** decimals))
+        
+        print(f"🔗 Генерируем URL для платежа:")
+        print(f"   Asset: {asset_symbol}, Network: {network}")
+        print(f"   Amount: {amount}, Value: {value}")
+        print(f"   Nonce: {nonce}")
+        print(f"   Contract: {contract_address}")
         
         if asset_symbol.upper() in ['ETH', 'BNB', 'MATIC'] and not contract_address:
-            # Нативные токены
-            value = int(amount * (10 ** decimals))
-            return f"ethereum:{wallet_address}@{self.get_chain_id(network)}?value={value}&gas=21000&nonce={nonce}"
+            url = f"ethereum:{wallet_address}@{chain_id}?value={value}&gas=21000&nonce={nonce}"
+            print(f"   Нативный токен URL: {url}")
+            return url
         else:
-            # ERC-20 токены - используем адрес контракта из базы данных или fallback
             if contract_address:
                 final_contract = contract_address
             else:
                 final_contract = token_contracts.get(network.lower(), {}).get(asset_symbol.upper())
             
             if final_contract:
-                # Для ERC-20 используем стандартный transfer
-                value = int(amount * (10 ** decimals))
-                return f"ethereum:{final_contract}/transfer?address={wallet_address}&uint256={value}&nonce={nonce}"
+                url = f"ethereum:pay-{final_contract}@{chain_id}?address={wallet_address}&uint256={value}&nonce={nonce}"
+                print(f"   ERC-20 токен URL: {url}")
+                return url
             else:
-                # Fallback URL
-                print(f"⚠️ Контракт для {asset_symbol} на {network} не найден, используем fallback")
-                return f"pay://{wallet_address}?amount={amount}&currency={asset_symbol}&nonce={nonce}"
+                print(f"⚠️ Контракт для {asset_symbol} на {network} не найден, используем fallback ethereum ссылку")
+                url = f"ethereum:{wallet_address}@{chain_id}?value={value}&gas=21000&nonce={nonce}"
+                print(f"   Fallback URL: {url}")
+                return url
     
     def get_chain_id(self, network: str) -> int:
-        """Возвращает chain ID для сети"""
         chain_ids = {
             'ethereum': 1,
             'bsc': 56,
             'polygon': 137,
-            'tron': 728126428  # Tron
+            'tron': 728126428
         }
         return chain_ids.get(network, 1)
     
     def CheckTransactionStatus(self, request, context):
-        """Проверяет статус транзакции"""
         try:
-            # Извлекаем nonce из URL
             nonce = self.extract_nonce_from_url(request.payment_url)
             record = payments.get(nonce)
             
@@ -720,10 +726,20 @@ class DonationService(donation_pb2_grpc.DonationServiceServicer):
             )
     
     def extract_nonce_from_url(self, payment_url: str) -> str:
-        """Извлекает nonce из URL платежа"""
+        print(f"🔍 Извлекаем nonce из URL: {payment_url}")
+        
         if 'nonce=' in payment_url:
-            return payment_url.split('nonce=')[1].split('&')[0]
-        return payment_url.rsplit('/', 1)[-1]
+            nonce = payment_url.split('nonce=')[1].split('&')[0]
+            print(f"   ✅ Найден nonce через параметр: {nonce}")
+            return nonce
+        
+        if '/' in payment_url:
+            nonce = payment_url.rsplit('/', 1)[-1]
+            print(f"   ⚠️ Используем последнюю часть URL как nonce: {nonce}")
+            return nonce
+            
+        print(f"   ❌ Не удалось извлечь nonce из URL")
+        return ""
     
     def GetPaymentQRCode(self, request, context):
         """Генерирует QR код для платежа"""

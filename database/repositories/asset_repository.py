@@ -42,7 +42,12 @@ class AssetRepository(BaseRepository[Asset]):
     
     async def get_active_assets(self) -> List[Asset]:
         """Получает все активные активы"""
-        return await self.find_by(is_active=True)
+        result = await self.session.execute(
+            select(Asset)
+            .where(Asset.is_active == True)
+            .options(selectinload(Asset.network))
+        )
+        return list(result.scalars().all())
     
     async def get_verified_assets(self) -> List[Asset]:
         """Получает все верифицированные активы"""

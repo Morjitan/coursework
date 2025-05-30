@@ -1,6 +1,7 @@
 import os
 from typing import Optional
 from decimal import Decimal
+import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy import text
@@ -16,6 +17,12 @@ from .repositories import (
     DonationRepository,
     CurrencyRepository
 )
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class Database:
@@ -142,7 +149,7 @@ class Database:
     async def get_all_assets(self) -> list:
         async with self.get_session() as session:
             repo = AssetRepository(session)
-            assets = await repo.get_assets_with_oracle()
+            assets = await repo.get_active_assets()
             
             result = []
             for asset in assets:
@@ -673,10 +680,11 @@ class Database:
                 result = await session.execute(
                     text("""
                         SELECT d.*, s.name as streamer_name, a.symbol as asset_symbol, 
-                               a.name as asset_name, a.network as asset_network
+                               a.name as asset_name, n.name as asset_network
                         FROM donations d
                         JOIN streamers s ON d.streamer_id = s.id
                         JOIN assets a ON d.asset_id = a.id
+                        JOIN networks n ON a.network_id = n.id
                         WHERE d.id = :donation_id
                     """),
                     {'donation_id': donation_id}
