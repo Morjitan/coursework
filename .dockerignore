@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+SETUP.md
+*.md
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache
+.coverage
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Local env files
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# Other
+node_modules/
+*.tar.gz
+*.zip 

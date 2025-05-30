@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: donation_postgres
+    environment:
+      POSTGRES_DB: donation_bot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    container_name: donation_bot
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:password@postgres:5432/donation_bot
+      - GRPC_TARGET=payment_service:50051
+    env_file:
+      - bot/.env
+    restart: unless-stopped
+
+  overlay:
+    build:
+      context: .
+      dockerfile: overlay/Dockerfile
+    container_name: donation_overlay
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:password@postgres:5432/donation_bot
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: payment_service/Dockerfile
+    container_name: donation_payment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:password@postgres:5432/donation_bot
+    ports:
+      - "50051:50051"
+      - "50052:50052"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: donation_network 

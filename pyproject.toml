@@ -1,0 +1,91 @@
+[tool.poetry]
+name = "donation-system"
+version = "1.0.0"
+description = "Система донатов для стримеров с Telegram ботом и overlay"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "bot"}, {include = "overlay"}, {include = "payment_service"}, {include = "database"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+# Telegram bot
+aiogram = "^3.0"
+pydantic-settings = "*"
+
+# Web framework
+fastapi = "*"
+uvicorn = "*"
+
+# Database
+sqlalchemy = {extras = ["asyncio"], version = "^2.0"}
+asyncpg = "*"
+alembic = "*"
+
+# gRPC
+grpcio = "*"
+grpcio-tools = "*"
+
+# Image processing
+Pillow = "*"
+
+# HTTP client for testing
+aiohttp = "*"
+web3 = "^7.12.0"
+
+[tool.poetry.group.dev.dependencies]
+black = "*"
+mypy = "*"
+pytest = "*"
+pytest-asyncio = "*"
+pytest-cov = "*"
+pytest-mock = "*"
+pytest-xdist = "*"
+pytest-watch = "*"
+httpx = "*"
+factory-boy = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --disable-warnings"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"
+markers = [
+    "unit: marks tests as unit tests",
+    "integration: marks tests as integration tests",
+    "e2e: marks tests as end-to-end tests",
+    "slow: marks tests as slow running",
+]
+
+[tool.coverage.run]
+source = ["bot", "overlay", "payment_service", "database"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/migrations/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+] 

@@ -1,0 +1,69 @@
+syntax = "proto3";
+package donation;
+
+// Сервис для генерации ссылок на оплату и проверки статуса транзакции
+service DonationService {
+  rpc CreatePaymentLink(CreatePaymentRequest) returns (CreatePaymentResponse);
+  rpc CheckTransactionStatus(CheckTransactionStatusRequest) returns (CheckTransactionStatusResponse);
+  rpc GetPaymentQRCode(GetQRCodeRequest) returns (GetQRCodeResponse);
+  rpc UpdateDonationStatus(UpdateDonationStatusRequest) returns (UpdateDonationStatusResponse);
+}
+
+// Статусы донатов
+enum DonationStatus {
+  CREATED = 0;              // создан
+  PENDING_PAYMENT = 1;      // ожидается оплата
+  PAYMENT_CONFIRMED = 2;    // оплата успешна
+  SHOWING_IN_OVERLAY = 3;   // показывается в оверлее
+  COMPLETED = 4;            // донат завершён
+  CANCELLED = 5;            // оплата отменена
+}
+
+message CreatePaymentRequest {
+  string streamer_wallet_address = 1;
+  double amount = 2;
+  string asset_symbol = 3;        // ETH, USDT, BTC, etc.
+  string network = 4;             // ethereum, bsc, polygon, etc.
+  string donation_id = 5;         // ID доната в основной БД
+  string donor_name = 6;
+  string message = 7;
+}
+
+message CreatePaymentResponse {
+  string payment_url = 1;
+  string qr_code_url = 2;
+  string nonce = 3;
+  DonationStatus status = 4;
+  int64 expires_at = 5;           // timestamp когда истекает
+}
+
+message CheckTransactionStatusRequest {
+  string payment_url = 1;
+}
+
+message CheckTransactionStatusResponse {
+  bool confirmed = 1;
+  string transaction_hash = 2;
+  DonationStatus status = 3;
+  string error_message = 4;
+}
+
+message GetQRCodeRequest {
+  string payment_url = 1;
+}
+
+message GetQRCodeResponse {
+  bytes qr_code_image = 1;        // PNG изображение QR-кода
+  string qr_code_url = 2;
+}
+
+message UpdateDonationStatusRequest {
+  string nonce = 1;
+  DonationStatus status = 2;
+  string transaction_hash = 3;
+}
+
+message UpdateDonationStatusResponse {
+  bool success = 1;
+  string message = 2;
+} 
