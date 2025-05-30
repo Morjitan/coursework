@@ -1,7 +1,3 @@
-"""
-Репозиторий для работы с валютами
-"""
-
 from typing import Optional, List
 from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession

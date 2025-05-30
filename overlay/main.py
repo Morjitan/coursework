@@ -5,13 +5,13 @@ import sys
 from overlay.generate_overlay import generate_overlay
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
-
+from PIL import Image
+import io
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from database import get_database
 
 app = FastAPI()
 
-# Правильный путь к статическим файлам
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -20,7 +20,7 @@ class DonationUpdate(BaseModel):
     streamer_id: str
     donor: str
     amount: float
-    currency: str  # Для обратной совместимости
+    currency: str
     message: str = ""
 
 @app.on_event("startup")
@@ -42,15 +42,12 @@ async def update_donation(donation: DonationUpdate):
         db = await get_database()
         streamer_id = int(donation.streamer_id)
         
-        # Проверяем, существует ли стример
         streamer = await db.get_streamer_by_id(streamer_id)
         if not streamer:
             raise HTTPException(status_code=404, detail="Стример не найден")
         
-        # Получаем все активы для поиска подходящего
         assets = await db.get_all_assets()
         
-        # Ищем актив по символу валюты
         asset = None
         for a in assets:
             if a['symbol'].upper() == donation.currency.upper():
@@ -58,7 +55,6 @@ async def update_donation(donation: DonationUpdate):
                 break
         
         if not asset:
-            # Если не найден точный актив, берем первый ETH
             for a in assets:
                 if a['symbol'] == 'ETH':
                     asset = a
@@ -67,13 +63,12 @@ async def update_donation(donation: DonationUpdate):
         if not asset:
             raise HTTPException(status_code=400, detail="Не найден подходящий актив")
         
-        # Создаём донат с новой схемой
         nonce = f"test_{int(time.time())}"
         payment_url = f"test://overlay_payment_{nonce}"
         
         donation_id = await db.create_donation(
             streamer_id=streamer_id,
-            asset_id=asset['id'],  # Используем asset_id вместо currency
+            asset_id=asset['id'],
             donor_name=donation.donor,
             amount=donation.amount,
             message=donation.message,
@@ -81,7 +76,6 @@ async def update_donation(donation: DonationUpdate):
             nonce=nonce
         )
         
-        # Сразу помечаем как подтверждённый для демонстрации
         await db.update_donation_status(donation_id, "confirmed", f"test_tx_{nonce[:8]}")
         
         return {"status": "ok", "donation_id": donation_id}
@@ -97,13 +91,9 @@ async def overlay_png(streamer_id: str):
         raise HTTPException(status_code=400, detail="Некорректный ID стримера")
     
     db = await get_database()
-    # Получаем последний подтверждённый донат для стримера
     donations = await db.get_recent_donations(streamer_id_int, limit=1)
     
     if not donations:
-        # Если нет донатов, возвращаем прозрачное изображение
-        from PIL import Image
-        import io
         img = Image.new('RGBA', (800, 200), (0, 0, 0, 0))
         img_bytes = io.BytesIO()
         img.save(img_bytes, format='PNG')
@@ -126,20 +116,18 @@ async def overlay_html(streamer_id: str):
         raise HTTPException(status_code=400, detail="Некорректный ID стримера")
     
     db = await get_database()
-    # Получаем последний подтверждённый донат для стримера
     donations = await db.get_recent_donations(streamer_id_int, limit=1)
     
     now = time.time()
     
     if donations:
         latest_donation = donations[0]
-        # Проверяем, был ли донат подтверждён в последние 25 секунд
         confirmed_timestamp = latest_donation['confirmed_at'].timestamp() if latest_donation['confirmed_at'] else 0
         
         if now - confirmed_timestamp <= 25:
             donor = latest_donation['donor_name']
             amount = float(latest_donation['amount'])
-            asset_symbol = latest_donation.get('asset_symbol', 'USD')  # Используем asset_symbol
+            asset_symbol = latest_donation.get('asset_symbol', 'USD') 
             message = latest_donation.get('message', '')
             
             html = f"""
@@ -218,7 +206,6 @@ async def get_streamer_donations(streamer_id: str, limit: int = 10):
         raise HTTPException(status_code=400, detail="Некорректный ID стримера")
     
     db = await get_database()
-    # Проверяем, существует ли стример
     streamer = await db.get_streamer_by_id(streamer_id_int)
     if not streamer:
         raise HTTPException(status_code=404, detail="Стример не найден")

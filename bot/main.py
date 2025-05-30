@@ -1,5 +1,3 @@
-import os
-import uuid
 import logging
 import datetime
 from decimal import Decimal
@@ -62,43 +60,6 @@ async def setup_bot():
     
     dp.include_router(settings_router)
 
-    async def create_main_menu(telegram_id: int) -> InlineKeyboardMarkup:
-        """Creates main menu with user status"""
-        streamer = await db.get_streamer(telegram_id, include_inactive=False)
-        is_active_streamer = streamer is not None
-        
-        if is_active_streamer:
-            keyboard = [
-                [
-                    InlineKeyboardButton(text="🎁 Отправить донат", callback_data="donate"),
-                    InlineKeyboardButton(text="📊 Мои донаты", callback_data="my_donations")
-                ],
-                [
-                    InlineKeyboardButton(text="💰 Полученные донаты", callback_data="streamer_donations"),
-                    InlineKeyboardButton(text="❌ Перестать быть стримером", callback_data="stop_being_streamer")
-                ],
-                [
-                    InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings_menu"),
-                    InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")
-                ]
-            ]
-        else:
-            keyboard = [
-                [
-                    InlineKeyboardButton(text="🎁 Отправить донат", callback_data="donate"),
-                    InlineKeyboardButton(text="📊 Мои донаты", callback_data="my_donations")
-                ],
-                [
-                    InlineKeyboardButton(text="📈 Стать стримером", callback_data="become_streamer"),
-                    InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings_menu")
-                ],
-                [
-                    InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")
-                ]
-            ]
-        
-        return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
     @dp.message(Command("start"))
     async def cmd_start(message: types.Message):
         await db.add_user(
@@ -108,7 +69,7 @@ async def setup_bot():
             last_name=message.from_user.last_name
         )
         
-        markup = await create_main_menu(message.from_user.id)
+        markup = await get_main_menu_keyboard(db, message.from_user.id)
         await message.answer("👋 Выберите действие:", reply_markup=markup)
 
     @dp.callback_query(lambda c: c.data == "settings_menu")
@@ -263,14 +224,11 @@ async def setup_bot():
 
     @dp.callback_query(lambda c: c.data == "main_menu")
     async def cb_main_menu(callback: CallbackQuery, state: FSMContext):
-        markup = await create_main_menu(callback.from_user.id)
+        markup = await get_main_menu_keyboard(db, callback.from_user.id)
         
-        # Проверяем, есть ли в сообщении текст для редактирования
         if callback.message.text:
-            # Если сообщение содержит текст, редактируем его
             await callback.message.edit_text("👋 Выберите действие:", reply_markup=markup)
         else:
-            # Если сообщение содержит изображение или медиа, отправляем новое сообщение
             await callback.message.answer("👋 Выберите действие:", reply_markup=markup)
         
         await state.clear()
@@ -740,7 +698,7 @@ async def setup_bot():
             text = "❌ <b>Ошибка при деактивации аккаунта стримера</b>\n\n"
             text += "Произошла техническая ошибка. Попробуйте еще раз или обратитесь к администратору."
         
-        markup = await create_main_menu(callback.from_user.id)
+        markup = await get_main_menu_keyboard(db, callback.from_user.id)
         await callback.message.edit_text(text, reply_markup=markup)
         await callback.answer()
 
@@ -751,7 +709,7 @@ async def setup_bot():
         text += "Ваш аккаунт стримера остается активным.\n"
         text += "Вы можете продолжать получать донаты через наш сервис! 💙"
         
-        markup = await create_main_menu(callback.from_user.id)
+        markup = await get_main_menu_keyboard(db, callback.from_user.id)
         await callback.message.edit_text(text, reply_markup=markup)
         await callback.answer()
 

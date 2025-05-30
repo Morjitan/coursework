@@ -4,7 +4,7 @@ from decimal import Decimal
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy import text
+from sqlalchemy import text, select, func
 
 from .models import Base
 from .repositories import (
@@ -17,6 +17,10 @@ from .repositories import (
     DonationRepository,
     CurrencyRepository
 )
+from .models.donation import Donation
+from .models.streamer import Streamer
+from .models.asset import Asset
+from .models.oracle import Network
 
 logging.basicConfig(
     level=logging.INFO,
@@ -188,11 +192,6 @@ class Database:
     async def get_donation_by_nonce(self, nonce: str) -> Optional[dict]:
         """Получает донат по nonce - обратная совместимость"""
         async with self.get_session() as session:
-            from sqlalchemy import select
-            from .models.donation import Donation
-            from .models.streamer import Streamer
-            from .models.asset import Asset
-            from .models.oracle import Network
             
             result = await session.execute(
                 select(
@@ -306,12 +305,6 @@ class Database:
     async def get_sent_donations_by_user(self, donor_name: str, limit: int = 5, offset: int = 0) -> dict:
         """Получает отправленные донаты пользователя с пагинацией"""
         async with self.get_session() as session:
-            from sqlalchemy import select, func
-            from .models.donation import Donation
-            from .models.streamer import Streamer
-            from .models.asset import Asset
-            from .models.oracle import Network
-            
             # Получаем донаты с пагинацией
             donations_result = await session.execute(
                 select(
@@ -357,7 +350,7 @@ class Database:
                     'amount': donation.amount,
                     'asset_symbol': row[2],
                     'asset_name': row[3],
-                    'asset_network': row[4],  # network_name из JOIN
+                    'asset_network': row[4],
                     'message': donation.message,
                     'status': donation.status,
                     'created_at': donation.created_at,
@@ -381,12 +374,7 @@ class Database:
     async def get_recent_donations(self, streamer_id: int, limit: int = 10) -> list:
         """Получает последние донаты для стримера"""
         async with self.get_session() as session:
-            from sqlalchemy import select
-            from .models.donation import Donation
-            from .models.asset import Asset
-            from .models.oracle import Network
             
-            # Используем прямой JOIN запрос вместо lazy loading
             result = await session.execute(
                 select(
                     Donation,
@@ -443,7 +431,6 @@ class Database:
             if not user:
                 return str(telegram_id)
             
-            # Формируем паттерн имени для поиска
             if user.username:
                 return f"@{user.username}"
             elif user.first_name:
@@ -531,10 +518,6 @@ class Database:
     async def get_donation_by_payment_url(self, payment_url: str) -> Optional[dict]:
         """Получает донат по payment_url"""
         async with self.get_session() as session:
-            from sqlalchemy import select
-            from .models.donation import Donation
-            from .models.streamer import Streamer
-            from .models.asset import Asset
             
             result = await session.execute(
                 select(
@@ -574,7 +557,6 @@ class Database:
                 }
             return None
 
-    # Новые методы для работы с валютами
     async def add_currency(self, code: str, name: str, rate_to_usd: Decimal, symbol: str = None, is_base: bool = False) -> int:
         """Добавляет валюту в базу данных"""
         async with self.get_session() as session:
@@ -697,8 +679,6 @@ class Database:
             logger.error(f"Ошибка получения доната по ID: {e}")
             return None
 
-
-# Глобальный экземпляр для обратной совместимости
 _database = None
 
 async def get_database() -> Database:

@@ -510,7 +510,6 @@ class DonationService(donation_pb2_grpc.DonationServiceServicer):
             }
         }
         
-        # Ищем актив по символу и сети
         key = (asset_symbol.upper(), network.lower())
         
         if key in assets_config:

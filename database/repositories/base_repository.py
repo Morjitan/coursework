@@ -1,12 +1,6 @@
-"""
-Базовый репозиторий с общими CRUD операциями
-"""
-
-from typing import Generic, TypeVar, Type, Dict, List, Optional, Any
+from typing import Generic, TypeVar, Type, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
-from sqlalchemy.sql import Select
-from sqlalchemy.orm import selectinload
 
 from ..models.base import Base
 
